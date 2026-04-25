@@ -6,7 +6,7 @@ mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
 
 hands = mp_hands.Hands(max_num_hands=1)
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 
 def count_fingers(hand_landmarks):
     tips = [8, 12, 16, 20]  # index, middle, ring, pinky
