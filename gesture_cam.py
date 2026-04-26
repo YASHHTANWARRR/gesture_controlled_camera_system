@@ -12,7 +12,7 @@ mp_hands = mp.solutions.hands
 mp_draw = mp.solutions.drawing_utils
 hands = mp_hands.Hands(max_num_hands=1)
 
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 
 prev_time = 0
 gesture_history = []
@@ -76,8 +76,6 @@ while True:
         for box in results_yolo.boxes[:2]:  # limit for speed
             x1, y1, x2, y2 = map(int, box.xyxy[0])
             cv2.rectangle(frame, (x1,y1), (x2,y2), (0,255,255), 3)
-
-    # ----------- FPS COUNTER -----------
 
     curr_time = time.time()
     fps = 1 / (curr_time - prev_time) if prev_time != 0 else 0
