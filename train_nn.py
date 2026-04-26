@@ -36,7 +36,7 @@ model.compile(optimizer='adam',
 model.fit(X_train, y_train, epochs=20, batch_size=16)
 
 # Save
-model.save("gesture_nn.h5")
+model.save("gesture_nn.keras")
 joblib.dump(label_map, "labels.pkl")
 
 print("Model trained and saved!")

@@ -6,7 +6,7 @@ from tensorflow.keras.models import load_model
 import joblib
 
 # Load model
-model = load_model("gesture_nn.h5")
+model = load_model("gesture_nn.keras", compile=False)
 label_map = joblib.load("labels.pkl")
 inv_map = {v:k for k,v in label_map.items()}
 
