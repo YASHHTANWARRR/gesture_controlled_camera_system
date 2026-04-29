@@ -1,84 +1,69 @@
-import tensorflow as tf
-from tensorflow.keras import layers, models
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.utils import to_categorical
 import joblib
-import os
 
-IMG_SIZE = 64
-BATCH_SIZE = 32
-EPOCHS = 10
+# ---------------- LOAD DATA ----------------
 
-DATASET_PATH = "dataset/"
+print("📂 Loading CSV dataset...")
 
-# ---------------- DEBUG CHECKS ----------------
+df = pd.read_csv("gestures.csv")
 
-print("🔍 Checking dataset...")
+# ---------------- SPLIT FEATURES & LABEL ----------------
 
-if not os.path.exists(DATASET_PATH):
-    raise Exception("❌ dataset/ folder not found!")
+X = df.iloc[:, :-1]   # features
+y = df.iloc[:, -1]    # labels (KEEP AS STRING)
 
-classes = os.listdir(DATASET_PATH)
-print("Classes found:", classes)
+# 🔥 CLEAN ONLY FEATURES (NOT LABELS)
+X = X.apply(pd.to_numeric, errors='coerce')
+X = X.dropna()
 
-if len(classes) == 0:
-    raise Exception("❌ No class folders inside dataset/")
+# match labels after cleaning
+y = y.loc[X.index]
 
-# ---------------- LOAD DATASET ----------------
+# convert to numpy
+X = X.values.astype(np.float32)
+y = y.values
 
-print("📂 Loading dataset...")
+print("✅ Dataset shape:", X.shape)
+print("✅ Data type:", X.dtype)
 
-train_ds = tf.keras.preprocessing.image_dataset_from_directory(
-    DATASET_PATH,
-    image_size=(IMG_SIZE, IMG_SIZE),
-    batch_size=BATCH_SIZE,
-    validation_split=0.2,
-    subset="training",
-    seed=123
+# ---------------- ENCODE LABELS ----------------
+
+labels = np.unique(y)
+label_map = {label: i for i, label in enumerate(labels)}
+
+y_encoded = np.array([label_map[label] for label in y])
+y_cat = to_categorical(y_encoded)
+
+print("✅ Labels:", label_map)
+
+# ---------------- TRAIN TEST SPLIT ----------------
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y_cat, test_size=0.2, random_state=42
 )
-
-val_ds = tf.keras.preprocessing.image_dataset_from_directory(
-    DATASET_PATH,
-    image_size=(IMG_SIZE, IMG_SIZE),
-    batch_size=BATCH_SIZE,
-    validation_split=0.2,
-    subset="validation",
-    seed=123
-)
-
-class_names = train_ds.class_names
-print("✅ Classes:", class_names)
-
-# ---------------- PERFORMANCE OPT ----------------
-
-AUTOTUNE = tf.data.AUTOTUNE
-
-train_ds = train_ds.cache().shuffle(1000).prefetch(buffer_size=AUTOTUNE)
-val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
 # ---------------- MODEL ----------------
 
 print("🧠 Building model...")
 
-model = models.Sequential([
-    layers.Rescaling(1./255, input_shape=(64,64,3)),
+model = Sequential([
+    Dense(128, activation='relu', input_shape=(63,)),
+    Dropout(0.3),
 
-    layers.Conv2D(16, 3, activation='relu'),
-    layers.MaxPooling2D(),
+    Dense(64, activation='relu'),
+    Dropout(0.2),
 
-    layers.Conv2D(32, 3, activation='relu'),
-    layers.MaxPooling2D(),
-
-    layers.Conv2D(64, 3, activation='relu'),
-    layers.MaxPooling2D(),
-
-    layers.Flatten(),
-    layers.Dense(128, activation='relu'),
-    layers.Dropout(0.3),   # 🔥 prevents overfitting
-    layers.Dense(len(class_names), activation='softmax')
+    Dense(len(labels), activation='softmax')
 ])
 
 model.compile(
     optimizer='adam',
-    loss='sparse_categorical_crossentropy',
+    loss='categorical_crossentropy',
     metrics=['accuracy']
 )
 
@@ -89,19 +74,24 @@ model.summary()
 print("🚀 Starting training...")
 
 history = model.fit(
-    train_ds,
-    validation_data=val_ds,
-    epochs=EPOCHS,
+    X_train,
+    y_train,
+    epochs=20,
+    batch_size=16,
+    validation_data=(X_test, y_test),
     verbose=1
 )
+
+# ---------------- EVALUATE ----------------
+
+loss, acc = model.evaluate(X_test, y_test)
+print(f"✅ Test Accuracy: {acc:.4f}")
 
 # ---------------- SAVE ----------------
 
 print("💾 Saving model...")
 
-model.save("gesture_new.keras")
-
-label_map = {name: i for i, name in enumerate(class_names)}
+model.save("gesture_nn.keras")
 joblib.dump(label_map, "labels.pkl")
 
-print("✅ Training complete and model saved!")
+print("🎉 Model trained and saved successfully!")
