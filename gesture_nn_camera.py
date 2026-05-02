@@ -1,142 +1,115 @@
 import cv2
-import mediapipe as mp
 import numpy as np
 import time
-import tensorflow as tf
-import joblib
+from collections import Counter
 
+cap = cv2.VideoCapture(0)
 
 recording = False
 out = None
 
-model = tf.saved_model.load("trt_model")
-infer = model.signatures["serving_default"]
+gesture_history = []
+HISTORY_SIZE = 10
 
-# labels
-label_map = joblib.load("labels.pkl")
-inv_map = {v: k for k, v in label_map.items()}
-
-mp_hands = mp.solutions.hands
-mp_draw = mp.solutions.drawing_utils
-
-hands = mp_hands.Hands(
-    max_num_hands=1,
-    model_complexity=0,   # 🔥 faster
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
-)
-
-cap = cv2.VideoCapture("/dev/video0")
-cap.set(3, 640)
-cap.set(4, 480)
-
-if not cap.isOpened():
-    cap = cv2.VideoCapture(0)
-
-prev_time = 0
-frame_count = 0
-results = None  # for frame skipping
-
+last_gesture = "none"
+last_time = time.time()
 
 while True:
-    success, frame = cap.read()
-    if not success:
-        print("Camera not working")
+    ret, frame = cap.read()
+    if not ret:
         break
 
-    frame = cv2.flip(frame, 1)
-    h, w, _ = frame.shape
+    frame = cv2.resize(frame, (640, 480))
 
+    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
 
-    if out is None:
-        fourcc = cv2.VideoWriter_fourcc(*'XVID')
-        out = cv2.VideoWriter('output.avi', fourcc, 20.0, (w, h))
-        print("VideoWriter opened:", out.isOpened())
+    lower = np.array([0, 20, 70])
+    upper = np.array([20, 255, 255])
 
+    mask = cv2.inRange(hsv, lower, upper)
+    mask = cv2.GaussianBlur(mask, (5,5), 0)
+    mask = cv2.medianBlur(mask, 5)
 
-    frame_count += 1
+    contours_data = cv2.findContours(mask, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-    if frame_count % 2 == 0:
-        results = hands.process(rgb)
+    if len(contours_data) == 3:
+        _, contours, _ = contours_data
+    else:
+        contours, _ = contours_data
 
     gesture = "none"
+    finger_count = 0
+    area = 0
+    num_defects = 0
 
+    if contours:
+        largest = max(contours, key=cv2.contourArea)
+        area = cv2.contourArea(largest)
 
-    if results and results.multi_hand_landmarks:
-        for hand_landmarks in results.multi_hand_landmarks:
+        if area > 20000:
+            hull_indices = cv2.convexHull(largest, returnPoints=False)
 
-            mp_draw.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
+            if hull_indices is not None and len(hull_indices) > 3:
+                defects = cv2.convexityDefects(largest, hull_indices)
 
-            row = []
-            for lm in hand_landmarks.landmark:
-                row.extend([lm.x, lm.y, lm.z])
+                if defects is not None:
+                    num_defects = defects.shape[0]
 
-            row = np.array(row).reshape(1, -1).astype("float32")
+                    for i in range(defects.shape[0]):
+                        _, _, _, d = defects[i][0]
+                        if d > 10000:
+                            finger_count += 1
 
-            # 🔥 TENSORRT INFERENCE
-            pred = infer(tf.constant(row))
-            pred = list(pred.values())[0].numpy()
+                if finger_count == 0:
+                    gesture = "fist"
+                elif finger_count == 1:
+                    gesture = "one"
+                elif finger_count == 2:
+                    gesture = "two"
+                elif finger_count == 3:
+                    gesture = "three"
+                elif finger_count >= 4:
+                    gesture = "palm"
 
-            gesture = inv_map[np.argmax(pred)]
+    gesture_history.append(gesture)
 
+    if len(gesture_history) > HISTORY_SIZE:
+        gesture_history.pop(0)
 
-    if gesture == "zoom":
-        zoom = frame[int(h*0.2):int(h*0.8), int(w*0.2):int(w*0.8)]
-        frame = cv2.resize(zoom, (w, h))
+    most_common = Counter(gesture_history).most_common(1)[0]
+    stable_gesture = most_common[0]
+    confidence = most_common[1]
 
-    elif gesture == "blur":
-        frame = cv2.GaussianBlur(frame, (25, 25), 0)
+    current_time = time.time()
 
-    elif gesture == "edges":
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        edges = cv2.Canny(gray, 100, 200)
-        frame = cv2.cvtColor(edges, cv2.COLOR_GRAY2BGR)
+    if stable_gesture != last_gesture and (current_time - last_time) > 1.2:
 
-    elif gesture == "gray":
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        frame = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        print(
+            f"Gesture: {stable_gesture} | "
+            f"Area: {int(area)} | "
+            f"Fingers: {finger_count} | "
+            f"Defects: {num_defects} | "
+            f"Confidence: {confidence}/{HISTORY_SIZE}"
+        )
 
-    elif gesture == "highlight":
-        cv2.rectangle(frame, (150, 100), (450, 350), (0, 255, 255), 3)
+        if stable_gesture == "palm":
+            if not recording:
+                fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                out = cv2.VideoWriter('gesture_record.avi', fourcc, 20.0, (640,480))
+                recording = True
 
+        elif stable_gesture == "fist":
+            if recording:
+                recording = False
+                if out:
+                    out.release()
 
-    key = cv2.waitKey(1) & 0xFF
+        last_gesture = stable_gesture
+        last_time = current_time
 
-    if key == ord('r'):
-        recording = True
-        print("Recording STARTED")
-
-    elif key == ord('s'):
-        recording = False
-        print("Recording STOPPED")
-
-    elif key == 27:
-        break
-
-
-    if recording and out is not None:
+    if recording and out:
         out.write(frame)
 
-
-    curr_time = time.time()
-    fps = 1 / (curr_time - prev_time) if prev_time != 0 else 0
-    prev_time = curr_time
-
-
-    cv2.putText(frame, f"Gesture: {gesture}", (10, 40),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
-
-    cv2.putText(frame, f"FPS: {int(fps)}", (10, 80),
-                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-    cv2.imshow("Jetson Optimized Gesture Camera", frame)
-
-
 cap.release()
-
-if out is not None:
+if out:
     out.release()
-
-cv2.destroyAllWindows()
