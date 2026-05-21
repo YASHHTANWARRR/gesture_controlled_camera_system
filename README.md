@@ -138,7 +138,46 @@ sudo docker run -it \
 --device /dev/video0 \
 gesture-jetson
 ```
+## 🎬 Demo Video
 
+Watch the real-time gesture-controlled camera system in action on the NVIDIA Jetson Nano.
+
+### 📹 Demo Video
+
+<video width="800" controls>
+  <source src="WhatsApp Video 2026-05-21 at 9.57.17 PM.mp4" type="video/mp4">
+  Your browser does not support the video tag.
+</video>
+
+---
+
+## 🎥 Demo Highlights
+
+The demo showcases:
+
+- ✋ Real-time hand gesture recognition  
+- 🧠 Neural network-based gesture classification  
+- 🎮 Dynamic visual effects:
+  - Zoom
+  - Blur
+  - Edge Detection
+  - Grayscale
+  - Object Highlight
+- 📊 FPS monitoring  
+- 🎥 Video recording control  
+- 🐳 Docker deployment on Jetson Nano  
+
+---
+
+## 📽️ Demo Workflow
+
+1. Camera initialization  
+2. MediaPipe hand landmark detection  
+3. Gesture prediction using trained neural network  
+4. Real-time effect rendering  
+5. Dockerized execution on Jetson Nano edge device  
+
+---
 ---
 
 ## ⚡ Optimization (Jetson Nano)
